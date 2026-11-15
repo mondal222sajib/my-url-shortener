@@ -1,28 +1,44 @@
 
 import { Redis } from "@upstash/redis";
+import { randomBytes } from "crypto";
 
 export const runtime = "nodejs";
 
-export async function GET(request, { params }) {
+export async function POST(request) {
   try {
-    const { code } = await params;
-    const redis = Redis.fromEnv();
-
-    const url = await redis.get(`link:${code}`);
+    const { url } = await request.json();
 
     if (!url) {
-      return new Response("Short link not found", {
-        status: 404
-      });
+      return Response.json(
+        { error: "URL is required" },
+        { status: 400 }
+      );
     }
 
-    return Response.redirect(url, 302);
+    const parsedUrl = new URL(url);
+
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      return Response.json(
+        { error: "Invalid URL" },
+        { status: 400 }
+      );
+    }
+
+    const redis = Redis.fromEnv();
+    const code = randomBytes(4).toString("hex");
+
+    await redis.set(`link:${code}`, parsedUrl.toString());
+
+    const shortUrl = `${new URL(request.url).origin}/${code}`;
+
+    return Response.json({ shortUrl });
 
   } catch (error) {
-    console.error("Redirect Error:", error);
+    console.error(error);
 
-    return new Response("Server error", {
-      status: 500
-    });
+    return Response.json(
+      { error: "Failed to shorten URL" },
+      { status: 500 }
+    );
   }
 }
